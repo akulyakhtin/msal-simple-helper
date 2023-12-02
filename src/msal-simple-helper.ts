@@ -89,4 +89,3 @@ export async function msalLogout() {
 export function msalGetMsal(): PublicClientApplication | null {
     return msalInstance;
 }
- console.log('11')
