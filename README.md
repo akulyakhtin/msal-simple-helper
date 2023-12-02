@@ -1,4 +1,4 @@
-# MSAL-SIMPLE_HELPER
+# MSAL-SIMPLE-HELPER
 Simple wrapper around MSAL4JS allowing for just a single login 
 (which in many cases is enough)
 
