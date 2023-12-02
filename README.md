@@ -9,6 +9,8 @@ npm i msal-simple-helper
 
 Usage:
 ```
+import { msalLogin, msalGetAccessToken, msalLogout, AuthConfig } from 'msal-simple-helper'
+
 // Prepare your Azure Entra ID data
 const authConfig: AuthConfig = {
       tenantId: yourTenantId,
