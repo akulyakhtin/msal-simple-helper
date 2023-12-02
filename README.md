@@ -2,6 +2,11 @@
 Simple wrapper around MSAL4JS allowing for just a single login 
 (which in many cases is enough)
 
+Installation:
+```
+npm i msal-simple-helper
+```
+
 Usage:
 ```
 // Prepare your Azure Entra ID data
