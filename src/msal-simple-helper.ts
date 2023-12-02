@@ -79,7 +79,6 @@ export async function msalGetAccessToken() {
 }
 
 export async function msalLogout() {
-    console.log('msal logout')
     if (!msalInstance) return;
     await msalInstance.logoutPopup();
     msalInstance = null;
