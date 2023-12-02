@@ -1,6 +1,6 @@
 {
   "name": "msal-simple-helper",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Simple wrapper around MSAL4JS library allowing for just a single login (which in many cases is enough)",
   "main": "./msal-simple-helper.js",
   "module": "./dist/msal-simple-helper.mjs",
