@@ -1,0 +1,27 @@
+{
+  "name": "msal-simple-helper",
+  "version": "1.0.0",
+  "description": "Simple wrapper around MSAL4JS library allowing for just a single login (which in many cases is enough)",
+  "main": "./msal-simple-helper.js",
+  "module": "./dist/msal-simple-helper.mjs",
+  "types": "./dist/msal-simple-helper.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "jest"
+  },
+  "author": "Alexander Kuliakhtin",
+  "license": "MIT",
+  "dependencies": {
+    "@azure/msal-browser": "^3.6.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.10",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.1",
+    "tsup": "^8.0.1",
+    "typescript": "^5.2.2"
+  }
+}
