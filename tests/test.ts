@@ -52,12 +52,12 @@ test('initializing MSAL twice with the same config results in the same instance'
       return null!
    }
    await msalLogin(mockConfig, mockLogin)
-   
-
+   expect(async() => {
+      await msalLogin(mockConfig2, mockLogin)
+   }).rejects.toThrow()
  })
 
 test('redirect flow requires response handler', async () => {
-
    const mockConfigRedirect = {
       clientId: 'mockClientId2',
       tenantId: 'mockTenantId2',

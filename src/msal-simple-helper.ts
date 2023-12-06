@@ -14,34 +14,31 @@ let msalInstance: IPublicClientApplication | null = null
 let authConfig: AuthConfig | null = null
 
 /**
- * Creates the MSAL singleton instance
+ * Creates MSAL singleton instance
  * Throws exception if the instance has already been created with different config
- * @param config config parameters to initialize the MSAL instance with
- * @returns the initialized MSAL singleton instance
+ * @param config config parameters to initialize  MSAL instance with
+ * @returns the initialized  instance
  */
 export async function msalInit (config: AuthConfig, fnInit: (config: AuthConfig) => Promise<IPublicClientApplication> = doInit): Promise<IPublicClientApplication> {
-  if (!config) throw new Error('Please, provide a valid config')
-  if (config.flow && !(['popup', 'redirect'].includes(config.flow.toLowerCase()))) throw new Error('Flow should be either popup or redirect')
-  if (config.flow?.toLowerCase() === 'redirect' && !config.redirectResponseHandler) {
-    throw new Error('Please, specify response handler for redirect flow')
-  }
+  validateConfig(config)
 
   // Use the existing MSAL if any
   // and don't allow recreating unless destroyed before
-  if (msalInstance !== null) {
+  if (msalInstance) {
     if (authConfig && configsDiffer(config, authConfig)) {
       throw new Error('MSAL has already been initialized with different config')
     } else {
       return await Promise.resolve(msalInstance)
     }
   }
+
   msalInstance = await fnInit(config)
 
   if (config.flow?.toLowerCase() === 'redirect') {
     msalInstance.handleRedirectPromise().then(handleRedirectResponse)
       .then((resp) => { if (resp) { config.redirectResponseHandler!(resp) } })
-      .catch(e => { console.error(e); throw e })
   }
+
   authConfig = config
   return msalInstance
 }
@@ -65,7 +62,7 @@ export async function msalLogin (config: AuthConfig,
  */
 export async function msalGetAccessToken (
   fnGetToken: (msalInstance: IPublicClientApplication, tokenRequest: { scopes: string[] }) => Promise<AuthenticationResult | undefined> = doGetAccessToken): Promise<AuthenticationResult | undefined> {
-  if (msalInstance === null) throw Error('Please, login first.')
+  if (msalInstance === null) throw Error('Please, initialize MSAL first.')
   const tokenRequest = {
     scopes: authConfig?.scopes ?? []
   }
@@ -91,6 +88,20 @@ export function msalGetMsal (): IPublicClientApplication | null {
 }
 
 // Implementation
+
+function validateConfig (config?: AuthConfig): void {
+  if (!config) throw new Error('Please, provide a valid config')
+  if (config.flow && !(['popup', 'redirect'].includes(config.flow.toLowerCase()))) throw new Error('Flow should be either popup or redirect')
+  if (config.flow?.toLowerCase() === 'redirect' && !config.redirectResponseHandler) {
+    throw new Error('Please, specify response handler for redirect flow')
+  }
+}
+
+function configsDiffer (cf1: AuthConfig, cf2: AuthConfig): boolean {
+  return (cf1.tenantId !== cf2.tenantId ||
+    cf1.clientId !== cf2.clientId ||
+    cf1.scopes !== cf2.scopes)
+}
 
 async function doLogout (msalInstance: IPublicClientApplication): Promise<void> {
   await msalInstance.logoutPopup()
@@ -150,12 +161,6 @@ function handleRedirectResponse (loginResponse: AuthenticationResult | null): Au
     }
   }
   return loginResponse
-}
-
-function configsDiffer (cf1: AuthConfig, cf2: AuthConfig): boolean {
-  return (cf1.tenantId !== cf2.tenantId ||
-    cf1.clientId !== cf2.clientId ||
-    cf1.scopes !== cf2.scopes)
 }
 
 // For testing
