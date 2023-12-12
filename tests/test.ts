@@ -47,33 +47,11 @@ test('initializing MSAL twice with the same config results in the same instance'
    await msalLogin(mockConfig, mockLogin)
  })
 
- test('logging in with the different config throws exception', async() => {
-   const mockLogin: (msalInstance: IPublicClientApplication, config: AuthConfig) => Promise<AuthenticationResult | undefined> = (msalInstance: IPublicClientApplication, config: AuthConfig) => {
-      return null!
-   }
-   await msalLogin(mockConfig, mockLogin)
-   expect(async() => {
-      await msalLogin(mockConfig2, mockLogin)
-   }).rejects.toThrow()
- })
-
-test('redirect flow requires response handler', async () => {
-   const mockConfigRedirect = {
-      clientId: 'mockClientId2',
-      tenantId: 'mockTenantId2',
-      flow: 'redirect'
-   }
-   expect(async() => {
-      await msalInit(mockConfigRedirect, mockInit)
-   }).rejects.toThrow()
-})
-
-
  test('redirect login requires response handler', async() => {
    const authConfig: AuthConfig = {
       clientId: 'mockClientId',
       tenantId: 'mockTenantId',
-      flow: 'redirect'
+      useRedirectFlow: true
    }
    expect( async() => {
       await msalLogin(authConfig)

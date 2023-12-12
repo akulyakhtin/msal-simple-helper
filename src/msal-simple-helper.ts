@@ -5,9 +5,10 @@ export interface AuthConfig {
   tenantId: string
   clientId: string
   scopes?: string[]
-  flow?: string
+  useRedirectFlow?: boolean
   redirectResponseHandler?: ((authResult: AuthenticationResult) => void)
   cacheLocation?: string
+  noSso?: boolean
 }
 
 let msalInstance: IPublicClientApplication | null = null
@@ -34,7 +35,7 @@ export async function msalInit (config: AuthConfig, fnInit: (config: AuthConfig)
 
   msalInstance = await fnInit(config)
 
-  if (config.flow?.toLowerCase() === 'redirect') {
+  if (config.useRedirectFlow) {
     msalInstance.handleRedirectPromise().then(handleRedirectResponse)
       .then((resp) => { if (resp) { config.redirectResponseHandler!(resp) } })
   }
@@ -49,10 +50,13 @@ export async function msalInit (config: AuthConfig, fnInit: (config: AuthConfig)
  * @param config Iconfig to init MSAL with
  * @returns authentication result
  */
-export async function msalLogin (config: AuthConfig,
+export async function msalLogin (config?: AuthConfig,
   fnLogin: (msalInstance: IPublicClientApplication, config: AuthConfig) => Promise<AuthenticationResult | undefined> = doLogin): Promise<AuthenticationResult | undefined> {
-  const msalInstance = await msalInit(config)
-  return await fnLogin(msalInstance, config)
+  if(!config) config = authConfig!
+  if(!msalInstance) {
+    await msalInit(config)
+  }
+  return await fnLogin(msalInstance!, config)
 }
 
 /**
@@ -91,9 +95,8 @@ export function msalGetMsal (): IPublicClientApplication | null {
 
 function validateConfig (config?: AuthConfig): void {
   if (!config) throw new Error('Please, provide a valid config')
-  if (config.flow && !(['popup', 'redirect'].includes(config.flow.toLowerCase()))) throw new Error('Flow should be either popup or redirect')
-  if (config.flow?.toLowerCase() === 'redirect' && !config.redirectResponseHandler) {
-    throw new Error('Please, specify response handler for redirect flow')
+  if (config.useRedirectFlow && !config.redirectResponseHandler) {
+    throw new Error('Please, specify response handler for the redirect flow')
   }
 }
 
@@ -134,17 +137,18 @@ async function doInit (config: AuthConfig): Promise<IPublicClientApplication> {
 async function doLogin (msalInstance: IPublicClientApplication, config: AuthConfig): Promise<AuthenticationResult | undefined> {
   let loginResponse = null
   try {
+    if(config.noSso) throw new Error('SSO disabled');
     loginResponse = await msalInstance.ssoSilent({})
     msalInstance.setActiveAccount(loginResponse.account)
     return loginResponse
   } catch (e) {
     console.warn('ssoSilent failed', e)
-    if (config.flow?.toLowerCase() === 'popup') {
+    if (config.useRedirectFlow) {
+      await msalInstance.loginRedirect() // won't go past this line
+    } else {
       loginResponse = await msalInstance.loginPopup()
       msalInstance.setActiveAccount(loginResponse.account)
       return loginResponse
-    } else {
-      await msalInstance.loginRedirect() // won't go past this line
     }
   }
 }
