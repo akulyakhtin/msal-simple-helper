@@ -26,16 +26,10 @@ const mockInit = async (unused: AuthConfig) => Promise.resolve(new PublicClientA
     await msalLogout()
  })
 
-test('initializing MSAL twice with the same config results in the same instance', async () => {
-   const msal1 = await msalInit(mockConfig, mockInit)
-   const msal2  = await msalInit(mockConfig, mockInit)
-   expect(msal2).toEqual(msal1)
- })
-
- test('initializing MSAL twice with different config results in an excepion', async () => {
+ test('initializing MSAL twice results in an excepion', async () => {
    await msalInit(mockConfig, mockInit)
    expect(async() => {
-      await msalInit(mockConfig2, mockInit)
+      await msalInit(mockConfig, mockInit)
    }).rejects.toThrow()
  })
 
