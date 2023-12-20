@@ -150,7 +150,11 @@ export async function msalLogout (fnLogout: (msalInstance: IPublicClientApplicat
 }
 
 async function doLogout (msalInstance: IPublicClientApplication): Promise<void> {
-  await msalInstance.logoutPopup()
+  if (authConfig.useRedirectFlow) {
+    await msalInstance.logoutRedirect()
+  } else {
+    await msalInstance.logoutPopup()
+  }
 }
 
 /**
