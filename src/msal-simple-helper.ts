@@ -1,5 +1,6 @@
-import type { AuthenticationResult, IPublicClientApplication } from '@azure/msal-browser'
+import type { AuthenticationResult, PopupRequest, RedirectRequest } from '@azure/msal-browser'
 import { PublicClientApplication } from '@azure/msal-browser'
+import type { MsalLike } from './msalLike'
 
 export interface AuthConfig {
   tenantId: string
@@ -9,9 +10,10 @@ export interface AuthConfig {
   redirectResponseHandler?: ((authResult: AuthenticationResult) => void)
   cacheLocation?: string
   noSso?: boolean
+  noAcquireTokenSilent?: boolean
 }
 
-let msalInstance: IPublicClientApplication | null = null
+let msalInstance: MsalLike
 let authConfig: AuthConfig
 
 /**
@@ -20,25 +22,74 @@ let authConfig: AuthConfig
  * @param config config parameters to initialize  MSAL instance with
  * @returns the initialized  instance
  */
-export async function msalInit (config: AuthConfig, fnInit: (config: AuthConfig) => Promise<IPublicClientApplication> = doInit): Promise<IPublicClientApplication> {
-  validateConfig(config)
+export async function msalInit (config: AuthConfig): Promise<MsalLike> {
 
   if (msalInstance) throw new Error('MSAL has already been initialized')
 
-  msalInstance = await fnInit(config)
+  validateConfig(config)
 
-  if (config.useRedirectFlow) {
-    if (!config.redirectResponseHandler) throw new Error('Please, set redirectResponseHandler for redirect flow')
+  authConfig = config
+
+  msalInstance = await msalCreator(authConfig)
+
+  if (authConfig.useRedirectFlow) {
     msalInstance.handleRedirectPromise().then(handleRedirectResponse)
       .then((resp) => { if (resp) { config.redirectResponseHandler!(resp) } })
   }
 
-  authConfig = config
   return msalInstance
 }
 
-async function doInit (config: AuthConfig): Promise<IPublicClientApplication> {
-  const msal = await PublicClientApplication.createPublicClientApplication({
+/**
+ * Initialize MSAL, if needed, and performs login
+ * @param config config to init MSAL with. Pass null if you have already called msalInit (for redirect flow)
+ * @returns authentication result
+ */
+export async function msalLogin (config?: AuthConfig): Promise<AuthenticationResult | undefined> {
+
+  if (!msalInstance) {
+    if (!config) throw Error('config must not be null')
+    await msalInit(config)
+  }
+  return await doLogin()
+}
+
+/**
+ * Retrieves access token
+ * Throws error if MSAL hasn't been initialized
+ * @returns access token response
+ */
+export async function msalGetAccessToken (): Promise<AuthenticationResult | undefined> {
+
+  if (msalInstance === null) throw Error('Please, initialize MSAL first.')
+
+  const tokenRequest = {
+    scopes: authConfig.scopes ?? []
+  }
+  return await doGetAccessToken(tokenRequest)
+}
+
+/**
+ * Logs out
+ */
+export async function msalLogout (): Promise<void> {
+  if (msalInstance == null) return
+  if (authConfig.useRedirectFlow) {
+    await msalInstance.logoutRedirect()
+  } else {
+    await msalInstance.logoutPopup()
+  }
+}
+
+/**
+ * @returns Gets MSAL instance (if you want to use the instance directly)
+ */
+export function msalGetMsal (): MsalLike | null {
+  return msalInstance
+}
+
+let msalCreator = async (config: AuthConfig): Promise<MsalLike> => {
+  return await PublicClientApplication.createPublicClientApplication({
     auth: {
       clientId: config.clientId,
       authority: 'https://login.microsoftonline.com/' + config.tenantId
@@ -46,8 +97,7 @@ async function doInit (config: AuthConfig): Promise<IPublicClientApplication> {
     cache: {
       cacheLocation: config.cacheLocation ?? 'localStorage'
     }
-  })
-  return msal
+  }) as unknown as MsalLike
 }
 
 function handleRedirectResponse (loginResponse: AuthenticationResult | null): AuthenticationResult | null {
@@ -70,101 +120,70 @@ function validateConfig (config?: AuthConfig): void {
   }
 }
 
-/**
- * Initialize MSAL, if needed, and performs login
- * If MSAL was already initialized with a different config throws exception
- * @param config config to init MSAL with. Pass null if you have already called msalInit (for redirect flow)
- * @returns authentication result
- */
-export async function msalLogin (config?: AuthConfig,
-  fnLogin: (msalInstance: IPublicClientApplication, config: AuthConfig) => Promise<AuthenticationResult | undefined> = doLogin): Promise<AuthenticationResult | undefined> {
-  // For redirect flow we pass null as config and use the config specified in msalInit before
-  if (!config) config = authConfig
-
-  if (!msalInstance) {
-    await msalInit(config)
-  }
-  return await fnLogin(msalInstance!, config)
-}
-
-async function doLogin (msalInstance: IPublicClientApplication, config: AuthConfig): Promise<AuthenticationResult | undefined> {
+async function doLogin (): Promise<AuthenticationResult | undefined> {
   let loginResponse
-  if (config.noSso) {
-    loginResponse = await doPopupOrRedirectLogin(msalInstance, config)
+
+  if (authConfig.noSso) {
+    loginResponse = await doPopupOrRedirectLogin()
   } else {
     try {
-      loginResponse = await doSsoLogin(msalInstance)
+      loginResponse = await doSsoLogin()
     } catch (e) {
       console.warn('SSO login failed')
-      loginResponse = await doPopupOrRedirectLogin(msalInstance, config)
+      loginResponse = await doPopupOrRedirectLogin()
     }
   }
-  msalInstance.setActiveAccount(loginResponse!.account)
+
+  if (loginResponse) {
+    msalInstance.setActiveAccount(loginResponse.account)
+  }
+
   return loginResponse
 }
 
-async function doSsoLogin (msalInstance: IPublicClientApplication): Promise<AuthenticationResult | undefined> {
+async function doSsoLogin (): Promise<AuthenticationResult | undefined> {
   return await msalInstance.ssoSilent({})
 }
 
-async function doPopupOrRedirectLogin (msalInstance: IPublicClientApplication, config: AuthConfig): Promise<AuthenticationResult | undefined> {
-  if (config.useRedirectFlow) {
+async function doPopupOrRedirectLogin (): Promise<AuthenticationResult | undefined> {
+  if (authConfig.useRedirectFlow) {
     await msalInstance.loginRedirect() // won't go past this line
   } else {
     return await msalInstance.loginPopup()
   }
 }
 
-/**
- * Retrieves access token
- * Throws error if MSAL hasn't been initialized
- * @returns access token response
- */
-export async function msalGetAccessToken (
-  fnGetToken: (msalInstance: IPublicClientApplication, tokenRequest: { scopes: string[] }) => Promise<AuthenticationResult | undefined> = doGetAccessToken): Promise<AuthenticationResult | undefined> {
-  if (msalInstance === null) throw Error('Please, initialize MSAL first.')
-  const tokenRequest = {
-    scopes: authConfig.scopes ?? []
+async function doGetAccessToken (tokenRequest: { scopes: string[] }): Promise<AuthenticationResult | undefined> {
+  let tokenResponse
+  if (authConfig.noAcquireTokenSilent) {
+    tokenResponse = await acquireTokenWithRedirectOrPopup(tokenRequest)
+  } else {
+    try {
+      tokenResponse = await msalInstance.acquireTokenSilent(tokenRequest)
+    } catch (e) {
+      console.error('acquireTokenSilent failed', e)
+      tokenResponse = await acquireTokenWithRedirectOrPopup(tokenRequest)
+
+    }
   }
-  return await fnGetToken(msalInstance, tokenRequest)
+  return tokenResponse
 }
 
-async function doGetAccessToken (msalInstance: IPublicClientApplication, tokenRequest: { scopes: string[] }): Promise<AuthenticationResult | never> {
+async function acquireTokenWithRedirectOrPopup (tokenRequest: PopupRequest | RedirectRequest): Promise<undefined | AuthenticationResult> {
   let tokenResponse
-  try {
-    tokenResponse = await msalInstance.acquireTokenSilent(tokenRequest)
-  } catch (e) {
-    console.error('acquireTokenSilent failed', e)
+  if (authConfig.useRedirectFlow) {
+    await msalInstance.acquireTokenRedirect(tokenRequest) // won't go past this line
+  } else {
     tokenResponse = await msalInstance.acquireTokenPopup(tokenRequest)
   }
   return tokenResponse
 }
 
 /**
- * Logs out and destroys MSAL
+ * For unit testing only
  */
-export async function msalLogout (fnLogout: (msalInstance: IPublicClientApplication) => Promise<void> = doLogout): Promise<void> {
-  if (msalInstance == null) return
-  await fnLogout(msalInstance)
+export function msalSetMsalCreator (fnCreator: (config: AuthConfig) => Promise<MsalLike>): void {
+  // @ts-expect-error this method is for unit testing only
   msalInstance = null
-}
-
-async function doLogout (msalInstance: IPublicClientApplication): Promise<void> {
-  if (authConfig.useRedirectFlow) {
-    await msalInstance.logoutRedirect()
-  } else {
-    await msalInstance.logoutPopup()
-  }
-}
-
-/**
- * @returns Gets MSAL instance (if you want to use the instance directly)
- */
-export function msalGetMsal (): IPublicClientApplication | null {
-  return msalInstance
-}
-
-// For testing
-export function msalDestroy (): void {
-  msalInstance = null
+  msalCreator = fnCreator
 }

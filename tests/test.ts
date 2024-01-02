@@ -1,8 +1,9 @@
-import { AuthenticationResult, IPublicClientApplication, PublicClientApplication } from '@azure/msal-browser'
-import { AuthConfig, msalDestroy, msalGetAccessToken, msalGetMsal, msalInit, msalLogin, msalLogout } from "../src/msal-simple-helper";
+import { AccountInfo, AuthenticationResult, EndSessionPopupRequest, EndSessionRequest, PopupRequest, RedirectRequest, SilentRequest, SsoSilentRequest } from '@azure/msal-browser'
+import { msalGetAccessToken, msalLogin, msalSetMsalCreator } from "../src/msal-simple-helper";
+import { MsalLike } from '../src/msalLike';
 
 beforeEach(() => {
-   msalDestroy()
+   msalSetMsalCreator(() => Promise.resolve(MSAL_STUB))
 });
 
 const mockConfig = {
@@ -10,64 +11,172 @@ const mockConfig = {
    tenantId: 'mockTenantId'
 }
 
-const mockConfig2 = {
-   clientId: 'mockClientId2',
-   tenantId: 'mockTenantId2'
+class MsalStub implements MsalLike {
+   loginPopup(request?: PopupRequest | undefined): Promise<AuthenticationResult> {
+      console.log('loginPopup stub')
+      return Promise.resolve({} as unknown as AuthenticationResult)
+   }
+   loginRedirect(request?: RedirectRequest | undefined): Promise<void> {
+      console.log('loginRedirect stub')
+      return Promise.resolve()
+   }
+   handleRedirectPromise(hash?: string | undefined): Promise<AuthenticationResult | null> {
+      console.log('handleRedirectPromise stub')
+      return Promise.resolve({} as unknown as AuthenticationResult)
+   }
+   setActiveAccount(account: AccountInfo | null): void {
+      console.log('setActiveAccount stub')
+   }
+   getAllAccounts(): AccountInfo[] {
+      console.log('getAllAccounts stub')
+      return []
+   }
+   acquireTokenSilent(silentRequest: SilentRequest): Promise<AuthenticationResult> {
+      console.log('acquireTokenSilent stub')
+      return Promise.resolve({} as unknown as AuthenticationResult)
+   }
+   acquireTokenPopup(request: PopupRequest): Promise<AuthenticationResult> {
+      console.log('acquireTokenPopup stub')
+      return Promise.resolve({} as unknown as AuthenticationResult)
+   }
+   acquireTokenRedirect(request: RedirectRequest): Promise<void> {
+      console.log('acquireTokenRedirect stub')
+      return Promise.resolve()
+   }
+   logoutRedirect(logoutRequest?: EndSessionRequest | undefined): Promise<void> {
+      console.log('loginRedirect stub')
+      return Promise.resolve()
+   }
+   logoutPopup(logoutRequest?: EndSessionPopupRequest | undefined): Promise<void> {
+      throw new Error('Method not implemented.');
+   }
+   ssoSilent(request: SsoSilentRequest): Promise<AuthenticationResult> {
+      console.log('ssoSilent stub')
+      return Promise.resolve({} as unknown as AuthenticationResult)
+   }
 }
 
-const mockInit = async (unused: AuthConfig) => Promise.resolve(new PublicClientApplication({
-   auth: {
-      clientId: 'mockClientId',
-      authority: 'https://login.microsoftonline.com/' + 'mockTenantId'
-   }
-}))
+const MSAL_STUB = new MsalStub()
 
- test('logout does nothing when not logged in', async () => {
-    await msalLogout()
- })
+test('when logging in first try sso', async () => {
 
- test('initializing MSAL twice results in an excepion', async () => {
-   await msalInit(mockConfig, mockInit)
-   expect(async() => {
-      await msalInit(mockConfig, mockInit)
-   }).rejects.toThrow()
- })
+   MSAL_STUB.ssoSilent = jest.fn(() => Promise.resolve({ account: "mockAccount" } as unknown as AuthenticationResult))
 
- test('logging in with the same config is ok', async() => {
-   const mockLogin: (msalInstance: IPublicClientApplication, config: AuthConfig) => Promise<AuthenticationResult|undefined> = (msalInstance: IPublicClientApplication, config: AuthConfig) => {
-      return null!
-   }
-   await msalLogin(mockConfig, mockLogin)
-   await msalLogin(mockConfig, mockLogin)
- })
+   await msalLogin(mockConfig)
+   expect(MSAL_STUB.ssoSilent).toHaveBeenCalled()
+})
 
- test('redirect login requires response handler', async() => {
-   const authConfig: AuthConfig = {
+test('when noSso specified sso login not performed', async () => {
+   MSAL_STUB.ssoSilent = jest.fn(() => Promise.resolve({ account: "mockAccount" } as unknown as AuthenticationResult))
+   await msalLogin({
       clientId: 'mockClientId',
       tenantId: 'mockTenantId',
-      useRedirectFlow: true
-   }
-   expect( async() => {
-      await msalLogin(authConfig)
-  }).rejects.toThrow()
- })
+      noSso: true
+   })
+   expect(MSAL_STUB.ssoSilent).not.toHaveBeenCalled()
+})
 
- test('get access token throws exception if MSAL not initialized', async() => {
-   expect( async() => {
-      await msalGetAccessToken()
-  }).rejects.toThrow()
- })
+test('if sso fails popup login will be performed', async () => {
+   MSAL_STUB.ssoSilent = (request: SsoSilentRequest) => { throw Error('sso failed') }
+   MSAL_STUB.loginPopup = jest.fn(() => Promise.resolve({ account: "mockAccount" } as unknown as AuthenticationResult))
+   await msalLogin(mockConfig)
+   expect(MSAL_STUB.loginPopup).toHaveBeenCalled()
+})
 
- test('logout sets MSAL to null', async() => {
-   await msalInit(mockConfig, mockInit)
-   expect(msalGetMsal()).toBeDefined()
-   await msalLogout(async() => {})
-   expect(msalGetMsal()).toBeNull()
- })
+test('when noSso specified popup login will be performed', async () => {
+   MSAL_STUB.ssoSilent = (request: SsoSilentRequest) => { throw Error('sso failed') }
+   MSAL_STUB.loginPopup = jest.fn(() => Promise.resolve({ account: "mockAccount" } as unknown as AuthenticationResult))
+   await msalLogin({
+      clientId: 'mockClientId',
+      tenantId: 'mockTenantId',
+      noSso: true
+   })
+   expect(MSAL_STUB.loginPopup).toHaveBeenCalled()
+})
 
- test('msalGetInstance returns the correct instance', async() => {
-   const msal = await msalInit(mockConfig, mockInit)
-   expect(msalGetMsal()).toBe(msal)
-   await msalLogout(async() => {})
-   expect(msalGetMsal()).toBeNull()
- })
+test('if sso fails and redirect is specified then redirect login will be performed', async () => {
+   MSAL_STUB.ssoSilent = (request: SsoSilentRequest) => { throw Error('sso failed') }
+   MSAL_STUB.loginRedirect = jest.fn(() => Promise.resolve())
+   await msalLogin({
+      clientId: 'mockClientId',
+      tenantId: 'mockTenantId',
+      useRedirectFlow: true,
+      redirectResponseHandler: (response) => { }
+   })
+   expect(MSAL_STUB.loginRedirect).toHaveBeenCalled()
+})
+
+test('if noSso specified and redirect is specified then redirect login will be performed', async () => {
+   MSAL_STUB.loginRedirect = jest.fn(() => Promise.resolve())
+   await msalLogin({
+      clientId: 'mockClientId',
+      tenantId: 'mockTenantId',
+      noSso: true,
+      useRedirectFlow: true,
+      redirectResponseHandler: (response) => { }
+   })
+   expect(MSAL_STUB.loginRedirect).toHaveBeenCalled()
+})
+
+test('if redirect flow is requested then redirectResponseHandler should be given', async () => {
+   expect(async () => {
+      await msalLogin({
+         clientId: 'mockClientId',
+         tenantId: 'mockTenantId',
+         useRedirectFlow: true,
+      })
+   }).rejects.toThrow()
+})
+
+test('if redirect flow is requested and noSso is specified then redirectResponseHandler should be given', async () => {
+   expect(async () => {
+      await msalLogin({
+         clientId: 'mockClientId',
+         tenantId: 'mockTenantId',
+         useRedirectFlow: true,
+         noSso: true
+      })
+   }).rejects.toThrow()
+})
+
+test('when getting access token, acquire token silent gets called first', async() => {
+   MSAL_STUB.acquireTokenSilent = jest.fn()
+   await msalLogin(mockConfig)
+   await msalGetAccessToken()
+   expect(MSAL_STUB.acquireTokenSilent).toHaveBeenCalled()
+})
+
+test('when getting access token, if acquire token silent fails then popup gets called', async() => {
+   MSAL_STUB.acquireTokenSilent = () =>  { throw Error('acquireTokenSilent failed')}
+   MSAL_STUB.acquireTokenPopup = jest.fn()
+   await msalLogin({
+      clientId: 'mockClientId',
+      tenantId: 'mockTenantId'
+   })
+   await msalGetAccessToken()
+   expect(MSAL_STUB.acquireTokenPopup).toHaveBeenCalled()
+})
+
+test('when getting access token with redirect flow, if acquire token silent fails then redirect gets called', async() => {
+   MSAL_STUB.acquireTokenSilent = () =>  { throw Error('acquireTokenSilent failed')}
+   MSAL_STUB.acquireTokenRedirect = jest.fn()
+   await msalLogin({
+      clientId: 'mockClientId',
+      tenantId: 'mockTenantId',
+      useRedirectFlow: true,
+      redirectResponseHandler: (response) => { }
+   })
+   await msalGetAccessToken()
+   expect(MSAL_STUB.acquireTokenRedirect).toHaveBeenCalled()
+})
+
+test('when noAcquirTokenSilent specified, token is not acquired silently', async() => {
+   MSAL_STUB.acquireTokenSilent = jest.fn()
+   await msalLogin({
+      clientId: 'mockClientId',
+      tenantId: 'mockTenantId',
+      noAcquireTokenSilent: true
+   })
+   await msalGetAccessToken()
+   expect(MSAL_STUB.acquireTokenSilent).not.toHaveBeenCalled()
+})
